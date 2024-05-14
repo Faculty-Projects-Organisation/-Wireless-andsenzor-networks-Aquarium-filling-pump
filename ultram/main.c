@@ -2,7 +2,21 @@
 #include <esp/uart.h>
 #include <FreeRTOS.h>
 #include <task.h>
+#include <string.h>
 #include <esp/gpio.h>
+
+//Wifi
+#include <wifi_config.h>
+#include <espressif/esp_sta.h>
+#include <espressif/esp_wifi.h>
+
+//Mqtt
+#include <paho_mqtt_c/MQTTESP8266.h>
+#include <paho_mqtt_c/MQTTClient.h>
+#include <semphr.h>
+
+//Mqtt credentials
+#include <mqtt_config.h>
 
 #define TRIGGER_GPIO 4
 #define ECHO_GPIO    5
@@ -10,6 +24,10 @@
 
 #define TRIGGER_DELAY_US 2
 #define TRIGGER_PULSE_WIDTH_US 10
+
+SemaphoreHandle_t wifi_alive;
+QueueHandle_t publish_queue;
+#define PUB_MSG_LEN 16
 
 uint32_t pulseIn(uint32_t gpio_num, bool level, uint32_t timeout_us)
 {
@@ -30,6 +48,62 @@ uint32_t pulseIn(uint32_t gpio_num, bool level, uint32_t timeout_us)
     }
 
     return 0;
+}
+
+//MQTT task
+/*static void mqqt_task(void * pvParameters)
+{
+    int ret = 0;
+    struct mqtt_network mqtt_network;
+    mqtt_client_t client   = mqtt_client_default;
+
+}*/
+
+static void wifi_task(void * pvParameters)
+{
+    uint8_t status = 0;
+    uint8_t retries = 10;
+
+    struct sdk_station_config config = {
+        .ssid = SSID,
+        .password = PASSWORD
+    };
+    
+    sdk_wifi_set_opmode(STATION_MODE);
+    sdk_wifi_station_set_config(&config);
+
+    while(1)
+    {
+        while ((status != STATION_GOT_IP) && (retries)){
+            status = sdk_wifi_station_get_connect_status();
+            printf("%s: status = %d\n\r", __func__, status );
+            if( status == STATION_WRONG_PASSWORD ){
+                printf("WiFi: wrong password\n\r");
+                break;
+            } else if( status == STATION_NO_AP_FOUND ) {
+                printf("WiFi: AP not found\n\r");
+                break;
+            } else if( status == STATION_CONNECT_FAIL ) {
+                printf("WiFi: connection failed\r\n");
+                break;
+            }
+            vTaskDelay( 1000 / portTICK_PERIOD_MS );
+            --retries;
+        }
+        if (status == STATION_GOT_IP) {
+            printf("WiFi: Connected\n\r");
+            xSemaphoreGive( wifi_alive );
+            taskYIELD();
+        }
+
+        while ((status = sdk_wifi_station_get_connect_status()) == STATION_GOT_IP) {
+            xSemaphoreGive( wifi_alive );
+            taskYIELD();
+        }
+        printf("WiFi: disconnected\n\r");
+        sdk_wifi_station_disconnect();
+        vTaskDelay( 1000 / portTICK_PERIOD_MS );
+    }
 }
 
 void ultrasonic_task(void *pvParameters)
@@ -71,6 +145,11 @@ void user_init(void)
     gpio_enable(TRIGGER_GPIO, GPIO_OUTPUT);
     gpio_enable(ECHO_GPIO, GPIO_INPUT);
     gpio_enable(LED_GPIO, GPIO_OUTPUT);
+
+    vSemaphoreCreateBinary(wifi_alive);
+    publish_queue = xQueueCreate(3, PUB_MSG_LEN);
+    xTaskCreate(&wifi_task, "wifi_task",  256, NULL, 2, NULL);
+    //xTaskCreate(&mqtt_task, "mqtt_task", 1024, NULL, 4, NULL);
 
     // Create the ultrasonic sensor task
     xTaskCreate(ultrasonic_task, "Ultrasonic Task", 256, NULL, 2, NULL);
