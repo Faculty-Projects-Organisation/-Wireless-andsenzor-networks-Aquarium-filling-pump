@@ -54,8 +54,6 @@ void ultrasonic_task(void *pvParameters)
             printf("Measuring");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
-
         // temperature
         uart_write_bytes(&txTemp, 1);
 
