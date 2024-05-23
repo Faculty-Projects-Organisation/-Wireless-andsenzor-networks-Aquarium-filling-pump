@@ -6,5 +6,5 @@
 // problem. Create an include/private_ssid_config.h file with the following two
 // definitions uncommented:
 //
-#define SSID "BrezzicnaInSenzorskaOmrezja"
-#define PASSWORD "Pr0ject!234"
+#define WIFI_SSID "BrezzicnaInSenzorskaOmrezja"
+#define WIFI_PASS "Pr0ject!234"
